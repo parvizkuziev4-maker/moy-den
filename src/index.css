@@ -259,6 +259,12 @@ select {
     color-mix(in oklab, var(--surface) 94%, transparent);
 }
 
+/* Подсветка вкладки под пальцем во время ведения (меняется напрямую, без перерисовки панели) */
+.is-dragging .tab-link { color: color-mix(in oklab, var(--text) 75%, transparent); }
+.is-dragging .tab-link[data-lit] { color: var(--accent-text); }
+/* панель изолирована: изменения внутри неё не заставляют браузер пересчитывать страницу */
+.glass-bar { contain: layout style; }
+
 /* Линза, пока палец держит её: чуть больше и прозрачнее (без второго размытия — оно тяжёлое) */
 .glass-lens-held {
   background: var(--lens-held-bg);

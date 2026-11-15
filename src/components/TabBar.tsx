@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, type PointerEvent } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Repeat, Sun, Trophy, Users, type LucideIcon } from 'lucide-react'
 import { t } from '../i18n/ru'
@@ -59,14 +59,12 @@ export function TabBar() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const active = activeIndex(pathname)
+  const activeRef = useRef(active)
   useScrollingClass()
 
   const bar = useRef<HTMLDivElement>(null)
   const lens = useRef<HTMLSpanElement>(null)
-  // режим «веду пальцем» (меняется только при входе и выходе — без перерисовок на каждом движении)
-  const [dragging, setDragging] = useState(false)
-  // вкладка под пальцем (обновляется только когда палец переходит на другую вкладку)
-  const [hover, setHover] = useState<number | null>(null)
+  const links = useRef<(HTMLAnchorElement | null)[]>([])
   const hoverRef = useRef<number | null>(null)
   const geomRef = useRef({ left: 0, inner: 0, tabW: 0 })
   const handled = useRef(false)
@@ -77,42 +75,52 @@ export function TabBar() {
   })
 
   // «Моторчик» линзы в режиме ведения: каждый кадр экрана мягко подтягивает линзу к пальцу.
-  // Анимации не перезапускаются, а между сообщениями от пальца движение остаётся ровным.
+  // Во время ведения React панель НЕ перерисовывает — всё меняется напрямую в стилях.
   const motor = useRef({ raf: 0, last: 0, x: 0, target: 0, scale: 1 })
 
   // Спокойное «перетекание» на вкладку: около полусекунды, с мягкой пружинкой в конце
-  const GLIDE = 'transform 0.55s cubic-bezier(0.3, 1.18, 0.45, 1), opacity 0.25s ease'
+  const GLIDE =
+    'transform 0.55s cubic-bezier(0.3, 1.18, 0.45, 1), opacity 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease'
+  const SOFT = 'opacity 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease'
 
-  // «Моторчик» не должен работать после ухода с экрана
+  /** Линза в покое — на активной вкладке */
+  function placeAtRest(index: number) {
+    const el = lens.current
+    if (!el) return
+    el.style.transition = GLIDE
+    // та же форма записи, что и при ведении (сдвиг + масштаб) — тогда возврат плавный, без скачка
+    el.style.transform = `translate3d(${Math.max(0, index) * 100}%, 0, 0) scale(1)`
+    el.style.opacity = index < 0 ? '0' : '1'
+  }
+
   useEffect(() => {
     const m = motor.current
     return () => cancelAnimationFrame(m.raf)
   }, [])
 
-  // Линза в покое стоит на активной вкладке
   useLayoutEffect(() => {
-    const el = lens.current
-    if (!el || dragging) return
-    el.style.transition = GLIDE
-    // та же форма записи, что и при ведении (сдвиг + масштаб) — тогда возврат плавный, без скачка
-    el.style.transform = `translate3d(${Math.max(0, active) * 100}%, 0, 0) scale(1)`
-    el.style.opacity = active < 0 ? '0' : '1'
-  }, [active, dragging])
+    activeRef.current = active
+    if (gesture.current.mode !== 'drag') placeAtRest(active)
+  }, [active])
 
   const tabAt = (clientX: number) => {
     const { left, tabW } = geomRef.current
     return Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
   }
 
+  /** Подсветка вкладки под пальцем — напрямую, без перерисовки */
+  function paintHover(i: number | null) {
+    if (i === hoverRef.current) return
+    if (hoverRef.current !== null) links.current[hoverRef.current]?.removeAttribute('data-lit')
+    if (i !== null) links.current[i]?.setAttribute('data-lit', '')
+    hoverRef.current = i
+  }
+
   /** Новая цель для линзы — центр под пальцем (саму линзу двигает «моторчик») */
   function aim(clientX: number) {
     const { left, inner, tabW } = geomRef.current
     motor.current.target = Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
-    const i = tabAt(clientX)
-    if (i !== hoverRef.current) {
-      hoverRef.current = i
-      setHover(i)
-    }
+    paintHover(tabAt(clientX))
   }
 
   function runMotor() {
@@ -134,7 +142,6 @@ export function TabBar() {
     m.last = 0
     m.raf = requestAnimationFrame(tick)
   }
-  const stopMotor = () => cancelAnimationFrame(motor.current.raf)
 
   /** Перейти в режим «веду пальцем»: линза плавно подъезжает под палец и дальше идёт за ним */
   function startDrag(clientX: number) {
@@ -143,14 +150,14 @@ export function TabBar() {
     g.mode = 'drag'
     const el = lens.current!
     // начинаем ровно с того места, где линза сейчас видна (даже если она ещё ехала)
-    const { left } = geomRef.current
     const box = el.getBoundingClientRect()
     const m = motor.current
-    m.x = box.left + box.width / 2 - left - geomRef.current.tabW / 2
+    m.x = box.left + box.width / 2 - geomRef.current.left - geomRef.current.tabW / 2
     m.scale = 1
-    el.style.transition = 'opacity 0.2s ease'
+    el.style.transition = SOFT
     el.style.opacity = '1'
-    setDragging(true)
+    el.classList.add('glass-lens-held')
+    bar.current!.classList.add('is-dragging')
     aim(clientX)
     runMotor()
   }
@@ -179,18 +186,20 @@ export function TabBar() {
       if (Math.abs(e.clientX - g.startX) > 8) startDrag(e.clientX)
       return
     }
-    if (g.mode !== 'drag') return
-    aim(e.clientX)
+    if (g.mode === 'drag') aim(e.clientX)
   }
   function end(goTo: number | null) {
     const g = gesture.current
     clearTimeout(g.timer)
-    stopMotor()
+    cancelAnimationFrame(motor.current.raf)
+    const wasDrag = g.mode === 'drag'
     g.mode = 'idle'
-    hoverRef.current = null
-    setHover(null)
-    setDragging(false)
-    if (goTo !== null && goTo !== active) {
+    paintHover(null)
+    bar.current?.classList.remove('is-dragging')
+    lens.current?.classList.remove('glass-lens-held')
+    const target = goTo ?? activeRef.current
+    if (wasDrag || target !== activeRef.current) placeAtRest(target)
+    if (goTo !== null && goTo !== activeRef.current) {
       handled.current = true
       setTimeout(() => (handled.current = false), 400)
       navigate(TABS[goTo]!.to)
@@ -206,8 +215,6 @@ export function TabBar() {
     if (gesture.current.mode !== 'idle') end(null)
   }
 
-  const lit = hover ?? active
-
   return (
     <nav aria-label="Разделы" className="tabbar-float fixed inset-x-0 z-30">
       <div
@@ -221,18 +228,21 @@ export function TabBar() {
         <span
           ref={lens}
           aria-hidden
-          className={`glass-lens absolute top-1 bottom-1 left-1 rounded-full ${dragging ? 'glass-lens-held' : ''}`}
+          className="glass-lens absolute top-1 bottom-1 left-1 rounded-full"
           style={{ width: `calc((100% - ${PAD * 2}px) / ${N})` }}
         />
         <ul className="relative flex">
           {TABS.map(({ to, label, icon: Icon }, i) => {
-            const on = i === lit
+            const on = i === active
             return (
               <li key={to} className="flex-1">
                 <NavLink
+                  ref={(el) => {
+                    links.current[i] = el
+                  }}
                   to={to}
                   end={to === '/'}
-                  aria-current={i === active ? 'page' : undefined}
+                  aria-current={on ? 'page' : undefined}
                   draggable={false}
                   onClick={(e) => {
                     // переход уже сделан жестом — второй раз не нужен (клавиатура работает как обычно)
@@ -241,16 +251,15 @@ export function TabBar() {
                       handled.current = false
                     }
                   }}
-                  className={`flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold transition-colors duration-150 ${
+                  className={`tab-link flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold transition-colors duration-150 ${
                     on ? 'text-accent' : 'text-ink/75'
                   }`}
                 >
-                  {/* под пальцем меняется только цвет — без увеличения иконки, чтобы не было «двойного» движения */}
                   <Icon
                     size={23}
                     strokeWidth={on ? 2.4 : 1.9}
                     aria-hidden
-                    className={dragging ? '' : `transition-transform duration-300 ${i === active ? 'scale-110' : ''}`}
+                    className={`transition-transform duration-300 ${on ? 'scale-110' : ''}`}
                   />
                   <span>{label}</span>
                 </NavLink>
