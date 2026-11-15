@@ -126,7 +126,10 @@ select {
   from { transform: translateY(100%); }
   to { transform: none; }
 }
-.sheet-in { animation: sheet-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+/* backwards, а не both: после появления анимация не должна удерживать окно — иначе оно не едет за пальцем */
+.sheet-in { animation: sheet-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) backwards; }
+.sheet-backdrop { animation: fade-in 0.2s ease-out backwards; }
+@keyframes fade-in { from { opacity: 0; } }
 
 /* Конфетти */
 .confetti {

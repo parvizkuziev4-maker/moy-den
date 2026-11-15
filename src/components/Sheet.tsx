@@ -14,7 +14,8 @@ interface Props {
 export function Sheet({ open, onClose, title, children }: Props) {
   const keyboard = useKeyboardInset(open)
   const panel = useRef<HTMLDivElement>(null)
-  useSwipeToClose(panel, open, onClose)
+  const backdrop = useRef<HTMLButtonElement>(null)
+  useSwipeToClose(panel, backdrop, open, onClose)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -36,14 +37,16 @@ export function Sheet({ open, onClose, title, children }: Props) {
       style={{ bottom: keyboard }}
       role="dialog" aria-modal="true" aria-label={title}>
       <button
+        ref={backdrop}
         type="button"
         aria-label={t.common.close}
         onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        className="sheet-backdrop absolute inset-0 bg-black/45"
       />
       <div
         ref={panel}
         className="sheet-in pb-safe relative max-h-[90dvh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-bg shadow-soft"
+        style={{ willChange: 'transform' }}
       >
         <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-line" aria-hidden />
         <header className="flex items-center gap-2 px-5 pt-2 pb-1">
@@ -69,7 +72,12 @@ export function Sheet({ open, onClose, title, children }: Props) {
  * если её содержимое прокручено в самый верх. Потянул далеко или быстро — закрылась,
  * чуть-чуть — вернулась на место.
  */
-function useSwipeToClose(panel: RefObject<HTMLDivElement | null>, open: boolean, onClose: () => void) {
+function useSwipeToClose(
+  panel: RefObject<HTMLDivElement | null>,
+  backdrop: RefObject<HTMLButtonElement | null>,
+  open: boolean,
+  onClose: () => void,
+) {
   const close = useRef(onClose)
   useEffect(() => {
     close.current = onClose
@@ -77,49 +85,77 @@ function useSwipeToClose(panel: RefObject<HTMLDivElement | null>, open: boolean,
 
   useEffect(() => {
     const el = panel.current
+    const bg = backdrop.current
     if (!open || !el) return
     let startX = 0
     let startY = 0
-    let startT = 0
     let dy = 0
+    let frame = 0
+    // последние точки касания — для скорости «смахивания»
+    let samples: { y: number; t: number }[] = []
     let state: 'idle' | 'maybe' | 'drag' | 'scroll' = 'idle'
 
-    const setY = (y: number, animate: boolean) => {
-      el.style.transition = animate ? 'transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none'
-      el.style.transform = y ? `translateY(${y}px)` : ''
+    const ease = 'cubic-bezier(0.2, 0.9, 0.3, 1)'
+    const paint = (y: number, animate: boolean, ms = 260) => {
+      el.style.transition = animate ? `transform ${ms}ms ${ease}` : 'none'
+      el.style.transform = y > 0 ? `translate3d(0, ${y}px, 0)` : ''
+      if (bg) {
+        bg.style.transition = animate ? `opacity ${ms}ms ${ease}` : 'none'
+        bg.style.opacity = String(Math.max(0, 1 - y / Math.max(1, el.offsetHeight)))
+      }
     }
 
     const onStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return
+      // анимация появления не должна мешать: сразу завершаем её
+      el.getAnimations().forEach((a) => a.finish())
       startX = e.touches[0]!.clientX
       startY = e.touches[0]!.clientY
-      startT = Date.now()
       dy = 0
+      samples = [{ y: startY, t: e.timeStamp }]
       state = el.scrollTop <= 0 ? 'maybe' : 'scroll'
     }
+
     const onMove = (e: TouchEvent) => {
       if (state === 'idle' || state === 'scroll') return
+      const y = e.touches[0]!.clientY
       const mx = e.touches[0]!.clientX - startX
-      const my = e.touches[0]!.clientY - startY
+      const my = y - startY
       if (state === 'maybe') {
-        if (Math.abs(my) < 6 && Math.abs(mx) < 6) return
-        // вниз и больше по вертикали — тянем шторку; иначе это обычная прокрутка
-        state = my > 0 && Math.abs(my) > Math.abs(mx) && el.scrollTop <= 0 ? 'drag' : 'scroll'
-        if (state === 'scroll') return
+        // тянут вверх или вбок — это обычная прокрутка содержимого
+        if (my < 0 || Math.abs(mx) > Math.abs(my) + 2) {
+          state = 'scroll'
+          return
+        }
+        // тянут вниз от самого верха: сразу забираем жест, чтобы iPhone не начал «пружинить»
+        e.preventDefault()
+        if (my < 4) return
+        state = 'drag'
+        startY = y // без рывка в первый кадр
       }
       e.preventDefault()
-      dy = Math.max(0, my)
-      setY(dy, false)
+      dy = Math.max(0, y - startY)
+      samples.push({ y, t: e.timeStamp })
+      if (samples.length > 6) samples.shift()
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => paint(dy, false))
     }
+
     const onEnd = () => {
+      cancelAnimationFrame(frame)
       if (state === 'drag') {
-        const speed = dy / Math.max(1, Date.now() - startT) // px/мс
-        if (dy > 110 || (dy > 40 && speed > 0.5)) {
+        const first = samples[0]!
+        const last = samples[samples.length - 1]!
+        const speed = (last.y - first.y) / Math.max(1, last.t - first.t) // пикселей в мс, по последним касаниям
+        const h = el.offsetHeight
+        if (dy > Math.min(140, h * 0.3) || (speed > 0.45 && dy > 20)) {
           ;(document.activeElement as HTMLElement | null)?.blur?.()
-          setY(el.offsetHeight + 40, true)
-          setTimeout(() => close.current(), 200)
+          // чем быстрее смахнули, тем быстрее уезжает
+          const ms = Math.max(140, Math.min(280, ((h - dy) / Math.max(speed, 1)) * 1.2))
+          paint(h + 40, true, ms)
+          setTimeout(() => close.current(), ms)
         } else {
-          setY(0, true)
+          paint(0, true)
         }
       }
       state = 'idle'
@@ -130,12 +166,13 @@ function useSwipeToClose(panel: RefObject<HTMLDivElement | null>, open: boolean,
     el.addEventListener('touchend', onEnd)
     el.addEventListener('touchcancel', onEnd)
     return () => {
+      cancelAnimationFrame(frame)
       el.removeEventListener('touchstart', onStart)
       el.removeEventListener('touchmove', onMove)
       el.removeEventListener('touchend', onEnd)
       el.removeEventListener('touchcancel', onEnd)
     }
-  }, [panel, open])
+  }, [panel, backdrop, open])
 }
 
 /** Высота клавиатуры iPhone: поднимаем шторку над ней. */
