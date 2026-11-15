@@ -246,10 +246,7 @@ select {
     inset 0 1px 0 var(--glass-shine),
     0 3px 10px -4px rgb(0 0 0 / 0.2);
   will-change: transform;
-  /* «перетекание» с лёгкой пружинкой */
-  transition:
-    transform 0.42s cubic-bezier(0.34, 1.36, 0.5, 1),
-    opacity 0.2s ease;
+  /* положение и анимацию задаёт TabBar.tsx напрямую */
 }
 
 /* Пока страница прокручивается — без живого размытия (его пересчёт на каждом кадре

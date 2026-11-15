@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Repeat, Sun, Trophy, Users, type LucideIcon } from 'lucide-react'
 import { t } from '../i18n/ru'
@@ -62,24 +62,39 @@ export function TabBar() {
   useScrollingClass()
 
   const bar = useRef<HTMLDivElement>(null)
-  // положение линзы в пикселях, пока палец на панели (null — линза стоит на активной вкладке)
-  const [drag, setDrag] = useState<{ x: number; hover: number } | null>(null)
-  const [jump, setJump] = useState(false)
-  const frame = useRef(0)
+  const lens = useRef<HTMLSpanElement>(null)
+  // палец на панели? (меняется только при касании и отпускании — без перерисовок на каждом движении)
+  const [dragging, setDragging] = useState(false)
+  // вкладка под пальцем (обновляется только когда палец переходит на другую вкладку)
+  const [hover, setHover] = useState<number | null>(null)
+  const hoverRef = useRef<number | null>(null)
+  const geomRef = useRef({ left: 0, inner: 0, tabW: 0 })
   const handled = useRef(false)
 
-  const geom = () => {
-    const r = bar.current!.getBoundingClientRect()
-    const inner = r.width - PAD * 2
-    return { left: r.left + PAD, inner, tabW: inner / N }
-  }
-  const lensXFor = (clientX: number) => {
-    const { left, inner, tabW } = geom()
-    return Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
-  }
-  const indexAt = (clientX: number) => {
-    const { left, tabW } = geom()
-    return Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
+  const SPRING = 'transform 0.42s cubic-bezier(0.34, 1.36, 0.5, 1), opacity 0.2s ease'
+
+  // Линза в покое стоит на активной вкладке; переезд — с пружинкой
+  useLayoutEffect(() => {
+    const el = lens.current
+    if (!el || dragging) return
+    el.style.transition = SPRING
+    el.style.transform = `translate3d(${Math.max(0, active) * 100}%, 0, 0)`
+    el.style.opacity = active < 0 ? '0' : '1'
+  }, [active, dragging])
+
+  /** Поставить линзу под палец — напрямую в стиль, в том же кадре, без анимации «догоняния» */
+  function follow(clientX: number, transition: string) {
+    const { left, inner, tabW } = geomRef.current
+    const x = Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
+    const el = lens.current!
+    el.style.transition = transition
+    el.style.transform = `translate3d(${x}px, 0, 0) scale(1.1)`
+    el.style.opacity = '1'
+    const i = Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
+    if (i !== hoverRef.current) {
+      hoverRef.current = i
+      setHover(i)
+    }
   }
 
   function onDown(e: PointerEvent<HTMLDivElement>) {
@@ -89,41 +104,36 @@ export function TabBar() {
     } catch {
       /* не страшно */
     }
-    // линза «прыгает» под палец с пружинкой, дальше едет за ним
-    setJump(true)
-    setDrag({ x: lensXFor(e.clientX), hover: indexAt(e.clientX) })
-    setTimeout(() => setJump(false), 220)
+    // размеры меряем один раз на касание, а не на каждом движении
+    const r = bar.current!.getBoundingClientRect()
+    const inner = r.width - PAD * 2
+    geomRef.current = { left: r.left + PAD, inner, tabW: inner / N }
+    setDragging(true)
+    // короткий подъезд под палец без «пружины», дальше — строго за пальцем
+    follow(e.clientX, 'transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1)')
   }
   function onMove(e: PointerEvent<HTMLDivElement>) {
-    if (drag === null) return
-    const next = { x: lensXFor(e.clientX), hover: indexAt(e.clientX) }
-    cancelAnimationFrame(frame.current)
-    frame.current = requestAnimationFrame(() => setDrag(next))
+    if (!dragging) return
+    follow(e.clientX, 'none')
+  }
+  function finish(goTo: number | null) {
+    hoverRef.current = null
+    setHover(null)
+    setDragging(false)
+    if (goTo !== null && goTo !== active) navigate(TABS[goTo]!.to)
   }
   function onUp(e: PointerEvent<HTMLDivElement>) {
-    if (drag === null) return
-    cancelAnimationFrame(frame.current)
-    const i = indexAt(e.clientX)
+    if (!dragging) return
+    const { left, tabW } = geomRef.current
     handled.current = true
     setTimeout(() => (handled.current = false), 400)
-    setDrag(null)
-    if (i !== active) navigate(TABS[i]!.to)
+    finish(Math.max(0, Math.min(N - 1, Math.floor((e.clientX - left) / tabW))))
   }
   function onCancel() {
-    cancelAnimationFrame(frame.current)
-    setDrag(null)
+    if (dragging) finish(null)
   }
 
-  const dragging = drag !== null
-  const hover = drag ? drag.hover : active
-  const lensTransform = dragging
-    ? `translateX(${drag.x}px) scale(1.1)`
-    : `translateX(${Math.max(0, active) * 100}%)`
-  const lensTransition = dragging
-    ? jump
-      ? 'transform 0.22s cubic-bezier(0.34, 1.36, 0.5, 1)'
-      : 'transform 70ms linear'
-    : undefined // обычное «перетекание» из CSS
+  const lit = hover ?? active
 
   return (
     <nav aria-label="Разделы" className="tabbar-float fixed inset-x-0 z-30">
@@ -136,18 +146,14 @@ export function TabBar() {
         className="glass-bar relative mx-auto max-w-md touch-none rounded-full p-1 select-none"
       >
         <span
+          ref={lens}
           aria-hidden
           className={`glass-lens absolute top-1 bottom-1 left-1 rounded-full ${dragging ? 'glass-lens-held' : ''}`}
-          style={{
-            width: `calc((100% - ${PAD * 2}px) / ${N})`,
-            transform: lensTransform,
-            transition: lensTransition,
-            opacity: active < 0 && !dragging ? 0 : 1,
-          }}
+          style={{ width: `calc((100% - ${PAD * 2}px) / ${N})` }}
         />
         <ul className="relative flex">
           {TABS.map(({ to, label, icon: Icon }, i) => {
-            const lit = i === hover
+            const on = i === lit
             return (
               <li key={to} className="flex-1">
                 <NavLink
@@ -162,15 +168,16 @@ export function TabBar() {
                       handled.current = false
                     }
                   }}
-                  className={`flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold transition-colors duration-200 ${
-                    lit ? 'text-accent' : 'text-ink/75'
+                  className={`flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold transition-colors duration-150 ${
+                    on ? 'text-accent' : 'text-ink/75'
                   }`}
                 >
+                  {/* под пальцем меняется только цвет — без увеличения иконки, чтобы не было «двойного» движения */}
                   <Icon
                     size={23}
-                    strokeWidth={lit ? 2.4 : 1.9}
+                    strokeWidth={on ? 2.4 : 1.9}
                     aria-hidden
-                    className={`transition-transform duration-300 ${lit ? 'scale-110' : ''}`}
+                    className={dragging ? '' : `transition-transform duration-300 ${i === active ? 'scale-110' : ''}`}
                   />
                   <span>{label}</span>
                 </NavLink>
