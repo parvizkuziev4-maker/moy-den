@@ -16,7 +16,7 @@ interface Props {
 export function Page({ title, subtitle, actions, back, children }: Props) {
   const navigate = useNavigate()
   return (
-    <div className="pt-safe px-page mx-auto max-w-xl pb-28">
+    <div className="pt-safe px-page mx-auto max-w-xl pb-40">
       <header className="flex items-start gap-2 pt-3 pb-4">
         {back && (
           <button

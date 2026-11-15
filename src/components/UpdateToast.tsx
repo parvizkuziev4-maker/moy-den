@@ -19,7 +19,7 @@ export function UpdateToast() {
   return (
     <div
       role="status"
-      className="animate-fade-up fixed inset-x-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-bg shadow-soft"
+      className="animate-fade-up fixed inset-x-4 bottom-[var(--above-tabbar)] z-40 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-bg shadow-soft"
     >
       <span className="flex-1 text-[15px]">{t.update.available}</span>
       <button
