@@ -196,6 +196,8 @@ select {
 .animate-shake { animation: shake 0.35s ease-in-out; }
 
 /* ---------- Liquid Glass: нижняя панель ---------- */
+/* Облегчённая версия для iPhone: одно размытие (без вложенных), блик нарисован фоном,
+   небольшие тени и свой графический слой — так панель не тормозит при прокрутке. */
 
 :root {
   --tabbar-h: 62px;
@@ -203,73 +205,64 @@ select {
   --tabbar-gap: max(10px, calc(env(safe-area-inset-bottom) - 12px));
   /* всё, что должно быть над панелью (кнопка +, сообщения) */
   --above-tabbar: calc(var(--tabbar-gap) + var(--tabbar-h) + 14px);
-  --glass-bg: rgb(255 255 255 / 0.5);
+  --glass-bg: rgb(255 255 255 / 0.55);
   --glass-edge: rgb(255 255 255 / 0.75);
-  --glass-shine: rgb(255 255 255 / 0.7);
-  --glass-shadow: 0 10px 34px -6px rgb(60 40 20 / 0.22), 0 2px 8px rgb(60 40 20 / 0.08);
-  --lens-bg: rgb(255 255 255 / 0.62);
+  --glass-shine: rgb(255 255 255 / 0.55);
+  --glass-shadow: 0 6px 20px -6px rgb(60 40 20 / 0.25);
+  --lens-bg: rgb(255 255 255 / 0.65);
+  --lens-held-bg: rgb(255 255 255 / 0.45);
 }
 .dark {
-  --glass-bg: rgb(42 38 34 / 0.48);
-  --glass-edge: rgb(255 255 255 / 0.16);
-  --glass-shine: rgb(255 255 255 / 0.22);
-  --glass-shadow: 0 10px 34px -6px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.3);
-  --lens-bg: rgb(255 255 255 / 0.12);
+  --glass-bg: rgb(42 38 34 / 0.55);
+  --glass-edge: rgb(255 255 255 / 0.14);
+  --glass-shine: rgb(255 255 255 / 0.1);
+  --glass-shadow: 0 6px 20px -6px rgb(0 0 0 / 0.6);
+  --lens-bg: rgb(255 255 255 / 0.13);
+  --lens-held-bg: rgb(255 255 255 / 0.2);
 }
 
 .tabbar-float {
   bottom: var(--tabbar-gap);
   padding-left: max(env(safe-area-inset-left), 14px);
   padding-right: max(env(safe-area-inset-right), 14px);
+  /* отдельный графический слой: iPhone двигает его видеокартой */
+  transform: translateZ(0);
 }
 
 .glass-bar {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(22px) saturate(190%);
-  backdrop-filter: blur(22px) saturate(190%);
+  /* блик сверху — прямо фоном, без отдельного слоя */
+  background:
+    linear-gradient(180deg, var(--glass-shine) 0%, transparent 50%),
+    var(--glass-bg);
+  -webkit-backdrop-filter: blur(14px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(170%);
   border: 1px solid var(--glass-edge);
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1px 0 var(--glass-shine),
-    inset 0 -1px 1px rgb(255 255 255 / 0.08);
-  isolation: isolate;
-}
-/* световой блик сверху, как у стекла */
-.glass-bar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, var(--glass-shine) 0%, transparent 45%);
-  opacity: 0.35;
-  pointer-events: none;
-  z-index: -1;
+  box-shadow: var(--glass-shadow);
 }
 
 .glass-lens {
   background: var(--lens-bg);
   box-shadow:
     inset 0 1px 0 var(--glass-shine),
-    inset 0 -1px 0 rgb(0 0 0 / 0.04),
-    0 4px 14px -4px rgb(0 0 0 / 0.18);
+    0 3px 10px -4px rgb(0 0 0 / 0.2);
+  will-change: transform;
   /* «перетекание» с лёгкой пружинкой */
   transition:
-    transform 0.45s cubic-bezier(0.34, 1.36, 0.5, 1),
+    transform 0.42s cubic-bezier(0.34, 1.36, 0.5, 1),
     opacity 0.2s ease;
 }
 
-/* Линза, пока палец держит её: чуть больше и «стекляннее» */
+/* Линза, пока палец держит её: чуть больше и прозрачнее (без второго размытия — оно тяжёлое) */
 .glass-lens-held {
-  background: color-mix(in oklab, var(--lens-bg) 70%, transparent);
-  -webkit-backdrop-filter: blur(6px) saturate(160%);
-  backdrop-filter: blur(6px) saturate(160%);
+  background: var(--lens-held-bg);
   box-shadow:
     inset 0 1px 0 var(--glass-shine),
     inset 0 0 0 1px var(--glass-edge),
-    0 8px 22px -6px rgb(0 0 0 / 0.28);
+    0 6px 16px -6px rgb(0 0 0 / 0.3);
 }
 
-/* Если стекло не поддерживается или включено «Понижение прозрачности» — сплошной фон */
+/* Сплошная панель: если стекло не поддерживается, включено «Понижение прозрачности»
+   или в настройках выключен «Эффект стекла» */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-bar { background: var(--surface); }
 }
@@ -280,3 +273,9 @@ select {
     backdrop-filter: none;
   }
 }
+.no-glass .glass-bar {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.no-glass .glass-lens { background: var(--surface-2); }

@@ -25,6 +25,7 @@
         var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
         document.documentElement.dataset.accent = p.accent || 'sun'
+        if (p.glassEffect === false) document.documentElement.classList.add('no-glass')
       } catch (e) {}
     </script>
   </head>

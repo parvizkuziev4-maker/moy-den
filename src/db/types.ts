@@ -187,6 +187,8 @@ export interface Settings {
   pinHash?: string
   lastBackupAt?: string
   installHintDismissed: boolean
+  /** Нижняя панель «стеклом» (выключить — сплошная, легче для старых iPhone) */
+  glassEffect: boolean
   /** За сколько минут напоминать в Календаре (0–15) */
   reminderLeadMinutes: number
 }

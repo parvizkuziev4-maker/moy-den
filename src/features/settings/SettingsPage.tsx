@@ -111,6 +111,15 @@ export function SettingsPage() {
           </Card>
         </div>
 
+        <Card className="p-0">
+          <ToggleRow
+            label={t.settings.glass}
+            hint={t.settings.glassHint}
+            checked={prefs.glassEffect}
+            onChange={(v) => setPrefs({ glassEffect: v })}
+          />
+        </Card>
+
         <div>
           <Label>{t.settings.weekStart}</Label>
           <Segmented

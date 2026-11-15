@@ -85,6 +85,7 @@ export function applyAppearance() {
   const root = document.documentElement
   root.classList.toggle('dark', dark)
   root.dataset.accent = current.accent
+  root.classList.toggle('no-glass', current.glassEffect === false)
   // Цвет полосы статуса под тему приложения
   document
     .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')

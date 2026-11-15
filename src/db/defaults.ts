@@ -14,6 +14,7 @@ export function defaultSettings(): Settings {
     restDaysPerWeek: 1,
     installHintDismissed: false,
     reminderLeadMinutes: 10,
+    glassEffect: true,
   }
 }
 
