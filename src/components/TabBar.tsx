@@ -63,26 +63,38 @@ export function TabBar() {
 
   const bar = useRef<HTMLDivElement>(null)
   const lens = useRef<HTMLSpanElement>(null)
-  // палец на панели? (меняется только при касании и отпускании — без перерисовок на каждом движении)
+  // режим «веду пальцем» (меняется только при входе и выходе — без перерисовок на каждом движении)
   const [dragging, setDragging] = useState(false)
   // вкладка под пальцем (обновляется только когда палец переходит на другую вкладку)
   const [hover, setHover] = useState<number | null>(null)
   const hoverRef = useRef<number | null>(null)
   const geomRef = useRef({ left: 0, inner: 0, tabW: 0 })
   const handled = useRef(false)
+  // касание: 'pending' — ещё непонятно, нажатие это или ведение пальцем
+  const gesture = useRef<{ mode: 'idle' | 'pending' | 'drag'; startX: number; since: number; timer?: ReturnType<typeof setTimeout> }>({
+    mode: 'idle',
+    startX: 0,
+    since: 0,
+  })
 
-  const SPRING = 'transform 0.42s cubic-bezier(0.34, 1.36, 0.5, 1), opacity 0.2s ease'
+  // Спокойное «перетекание» на вкладку: около полусекунды, с мягкой пружинкой в конце
+  const GLIDE = 'transform 0.55s cubic-bezier(0.3, 1.18, 0.45, 1), opacity 0.25s ease'
 
-  // Линза в покое стоит на активной вкладке; переезд — с пружинкой
+  // Линза в покое стоит на активной вкладке
   useLayoutEffect(() => {
     const el = lens.current
     if (!el || dragging) return
-    el.style.transition = SPRING
+    el.style.transition = GLIDE
     el.style.transform = `translate3d(${Math.max(0, active) * 100}%, 0, 0)`
     el.style.opacity = active < 0 ? '0' : '1'
   }, [active, dragging])
 
-  /** Поставить линзу под палец — напрямую в стиль, в том же кадре, без анимации «догоняния» */
+  const tabAt = (clientX: number) => {
+    const { left, tabW } = geomRef.current
+    return Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
+  }
+
+  /** Поставить линзу под палец — напрямую в стиль, в том же кадре */
   function follow(clientX: number, transition: string) {
     const { left, inner, tabW } = geomRef.current
     const x = Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
@@ -90,11 +102,21 @@ export function TabBar() {
     el.style.transition = transition
     el.style.transform = `translate3d(${x}px, 0, 0) scale(1.1)`
     el.style.opacity = '1'
-    const i = Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
+    const i = tabAt(clientX)
     if (i !== hoverRef.current) {
       hoverRef.current = i
       setHover(i)
     }
+  }
+
+  /** Перейти в режим «веду пальцем»: линза мягко подъезжает под палец, дальше идёт строго за ним */
+  function startDrag(clientX: number) {
+    const g = gesture.current
+    clearTimeout(g.timer)
+    g.mode = 'drag'
+    g.since = performance.now()
+    setDragging(true)
+    follow(clientX, 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1)')
   }
 
   function onDown(e: PointerEvent<HTMLDivElement>) {
@@ -108,29 +130,44 @@ export function TabBar() {
     const r = bar.current!.getBoundingClientRect()
     const inner = r.width - PAD * 2
     geomRef.current = { left: r.left + PAD, inner, tabW: inner / N }
-    setDragging(true)
-    // короткий подъезд под палец без «пружины», дальше — строго за пальцем
-    follow(e.clientX, 'transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1)')
+    const g = gesture.current
+    g.mode = 'pending'
+    g.startX = e.clientX
+    const x = e.clientX
+    // подержал палец — значит, хочет вести
+    g.timer = setTimeout(() => g.mode === 'pending' && startDrag(x), 220)
   }
   function onMove(e: PointerEvent<HTMLDivElement>) {
-    if (!dragging) return
-    follow(e.clientX, 'none')
+    const g = gesture.current
+    if (g.mode === 'pending') {
+      if (Math.abs(e.clientX - g.startX) > 8) startDrag(e.clientX)
+      return
+    }
+    if (g.mode !== 'drag') return
+    // пока линза подъезжает под палец (0,2 с) — не перебиваем её, дальше строго за пальцем
+    follow(e.clientX, performance.now() - g.since < 200 ? 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none')
   }
-  function finish(goTo: number | null) {
+  function end(goTo: number | null) {
+    const g = gesture.current
+    clearTimeout(g.timer)
+    g.mode = 'idle'
     hoverRef.current = null
     setHover(null)
     setDragging(false)
-    if (goTo !== null && goTo !== active) navigate(TABS[goTo]!.to)
+    if (goTo !== null && goTo !== active) {
+      handled.current = true
+      setTimeout(() => (handled.current = false), 400)
+      navigate(TABS[goTo]!.to)
+    }
   }
   function onUp(e: PointerEvent<HTMLDivElement>) {
-    if (!dragging) return
-    const { left, tabW } = geomRef.current
-    handled.current = true
-    setTimeout(() => (handled.current = false), 400)
-    finish(Math.max(0, Math.min(N - 1, Math.floor((e.clientX - left) / tabW))))
+    if (gesture.current.mode === 'idle') return
+    // и нажатие, и ведение заканчиваются переходом на вкладку под пальцем;
+    // при нажатии линза просто плавно перетекает со старой вкладки
+    end(tabAt(e.clientX))
   }
   function onCancel() {
-    if (dragging) finish(null)
+    if (gesture.current.mode !== 'idle') end(null)
   }
 
   const lit = hover ?? active
