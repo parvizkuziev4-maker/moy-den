@@ -71,21 +71,31 @@ export function TabBar() {
   const geomRef = useRef({ left: 0, inner: 0, tabW: 0 })
   const handled = useRef(false)
   // касание: 'pending' — ещё непонятно, нажатие это или ведение пальцем
-  const gesture = useRef<{ mode: 'idle' | 'pending' | 'drag'; startX: number; since: number; timer?: ReturnType<typeof setTimeout> }>({
+  const gesture = useRef<{ mode: 'idle' | 'pending' | 'drag'; startX: number; timer?: ReturnType<typeof setTimeout> }>({
     mode: 'idle',
     startX: 0,
-    since: 0,
   })
+
+  // «Моторчик» линзы в режиме ведения: каждый кадр экрана мягко подтягивает линзу к пальцу.
+  // Анимации не перезапускаются, а между сообщениями от пальца движение остаётся ровным.
+  const motor = useRef({ raf: 0, last: 0, x: 0, target: 0, scale: 1 })
 
   // Спокойное «перетекание» на вкладку: около полусекунды, с мягкой пружинкой в конце
   const GLIDE = 'transform 0.55s cubic-bezier(0.3, 1.18, 0.45, 1), opacity 0.25s ease'
+
+  // «Моторчик» не должен работать после ухода с экрана
+  useEffect(() => {
+    const m = motor.current
+    return () => cancelAnimationFrame(m.raf)
+  }, [])
 
   // Линза в покое стоит на активной вкладке
   useLayoutEffect(() => {
     const el = lens.current
     if (!el || dragging) return
     el.style.transition = GLIDE
-    el.style.transform = `translate3d(${Math.max(0, active) * 100}%, 0, 0)`
+    // та же форма записи, что и при ведении (сдвиг + масштаб) — тогда возврат плавный, без скачка
+    el.style.transform = `translate3d(${Math.max(0, active) * 100}%, 0, 0) scale(1)`
     el.style.opacity = active < 0 ? '0' : '1'
   }, [active, dragging])
 
@@ -94,14 +104,10 @@ export function TabBar() {
     return Math.max(0, Math.min(N - 1, Math.floor((clientX - left) / tabW)))
   }
 
-  /** Поставить линзу под палец — напрямую в стиль, в том же кадре */
-  function follow(clientX: number, transition: string) {
+  /** Новая цель для линзы — центр под пальцем (саму линзу двигает «моторчик») */
+  function aim(clientX: number) {
     const { left, inner, tabW } = geomRef.current
-    const x = Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
-    const el = lens.current!
-    el.style.transition = transition
-    el.style.transform = `translate3d(${x}px, 0, 0) scale(1.1)`
-    el.style.opacity = '1'
+    motor.current.target = Math.max(0, Math.min(inner - tabW, clientX - left - tabW / 2))
     const i = tabAt(clientX)
     if (i !== hoverRef.current) {
       hoverRef.current = i
@@ -109,14 +115,44 @@ export function TabBar() {
     }
   }
 
-  /** Перейти в режим «веду пальцем»: линза мягко подъезжает под палец, дальше идёт строго за ним */
+  function runMotor() {
+    const m = motor.current
+    const el = lens.current
+    if (!el) return
+    const tick = (now: number) => {
+      const dt = Math.min(64, now - (m.last || now))
+      m.last = now
+      // догоняет ~65% пути за кадр 60 Гц; на 120 Гц шаги вдвое мельче — плавно на любом экране
+      const k = 1 - Math.pow(0.35, dt / 16.67)
+      m.x += (m.target - m.x) * k
+      m.scale += (1.1 - m.scale) * k
+      if (Math.abs(m.target - m.x) < 0.3) m.x = m.target
+      el.style.transform = `translate3d(${m.x.toFixed(2)}px, 0, 0) scale(${m.scale.toFixed(3)})`
+      m.raf = requestAnimationFrame(tick)
+    }
+    cancelAnimationFrame(m.raf)
+    m.last = 0
+    m.raf = requestAnimationFrame(tick)
+  }
+  const stopMotor = () => cancelAnimationFrame(motor.current.raf)
+
+  /** Перейти в режим «веду пальцем»: линза плавно подъезжает под палец и дальше идёт за ним */
   function startDrag(clientX: number) {
     const g = gesture.current
     clearTimeout(g.timer)
     g.mode = 'drag'
-    g.since = performance.now()
+    const el = lens.current!
+    // начинаем ровно с того места, где линза сейчас видна (даже если она ещё ехала)
+    const { left } = geomRef.current
+    const box = el.getBoundingClientRect()
+    const m = motor.current
+    m.x = box.left + box.width / 2 - left - geomRef.current.tabW / 2
+    m.scale = 1
+    el.style.transition = 'opacity 0.2s ease'
+    el.style.opacity = '1'
     setDragging(true)
-    follow(clientX, 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1)')
+    aim(clientX)
+    runMotor()
   }
 
   function onDown(e: PointerEvent<HTMLDivElement>) {
@@ -144,12 +180,12 @@ export function TabBar() {
       return
     }
     if (g.mode !== 'drag') return
-    // пока линза подъезжает под палец (0,2 с) — не перебиваем её, дальше строго за пальцем
-    follow(e.clientX, performance.now() - g.since < 200 ? 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none')
+    aim(e.clientX)
   }
   function end(goTo: number | null) {
     const g = gesture.current
     clearTimeout(g.timer)
+    stopMotor()
     g.mode = 'idle'
     hoverRef.current = null
     setHover(null)
