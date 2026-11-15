@@ -1,0 +1,193 @@
+@import 'tailwindcss';
+
+/* Тёмная тема включается классом .dark на <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #fbf7f2;
+  --surface: #ffffff;
+  --surface-2: #f4eee6;
+  --text: #2b2622;
+  --muted: #6f655b;
+  --danger: #c4363b;
+  --warn: #a85e14;
+  --pink: #ce2f6d;
+  --border: #ece4da;
+  --accent: #e8913a;
+  --accent-text: #a85e14;
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --on-accent: #2b2622;
+  --shadow: 0 1px 2px rgb(60 40 20 / 0.05), 0 6px 20px rgb(60 40 20 / 0.06);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #141210;
+  --surface: #1e1b18;
+  --surface-2: #2a2622;
+  --text: #f2ede7;
+  --muted: #a39a90;
+  --danger: #e96367;
+  --warn: #e8913a;
+  --pink: #dd6896;
+  --border: #322d28;
+  --accent-soft: color-mix(in oklab, var(--accent) 22%, transparent);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.25);
+  color-scheme: dark;
+}
+
+/* Акцентные цвета.
+   --accent — яркий цвет для украшений (кольца, точки, рамки),
+   --accent-text — цвет текста (в светлой теме чуть глубже, чтобы хорошо читался),
+   --on-accent — текст на кнопке цвета акцента. Всё подобрано на контраст не ниже 4.5:1. */
+[data-accent='sun'] { --accent: #e8913a; --accent-text: #a85e14; --on-accent: #2b2622; }
+[data-accent='coral'] { --accent: #d43d1f; --accent-text: #cd3b1e; --on-accent: #ffffff; }
+[data-accent='mint'] { --accent: #23836c; --accent-text: #217d67; --on-accent: #ffffff; }
+[data-accent='ocean'] { --accent: #3678b4; --accent-text: #3574ae; --on-accent: #ffffff; }
+[data-accent='lavender'] { --accent: #8061d2; --accent-text: #7b5bd0; --on-accent: #ffffff; }
+[data-accent='rose'] { --accent: #d23874; --accent-text: #ce2f6d; --on-accent: #ffffff; }
+.dark[data-accent='sun'] { --accent: #e8913a; --accent-text: #e8913a; --on-accent: #141210; }
+.dark[data-accent='coral'] { --accent: #e5654b; --accent-text: #e5654b; --on-accent: #141210; }
+.dark[data-accent='mint'] { --accent: #2a9d82; --accent-text: #2a9d82; --on-accent: #141210; }
+.dark[data-accent='ocean'] { --accent: #4789c8; --accent-text: #4789c8; --on-accent: #141210; }
+.dark[data-accent='lavender'] { --accent: #9075d8; --accent-text: #9075d8; --on-accent: #141210; }
+.dark[data-accent='rose'] { --accent: #d9578a; --accent-text: #d9578a; --on-accent: #141210; }
+
+/* Текст цвета акцента всегда читаемый */
+.text-accent { color: var(--accent-text); }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-line: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-danger-solid: #c4363b;
+  --color-warn: var(--warn);
+  --color-pink: var(--pink);
+  --shadow-soft: var(--shadow);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  margin: 0;
+  min-height: 100dvh;
+}
+
+/* Поля ввода не меньше 16px, иначе iPhone приближает экран */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+.pt-safe { padding-top: max(env(safe-area-inset-top), 12px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pl-safe { padding-left: env(safe-area-inset-left); }
+.pr-safe { padding-right: env(safe-area-inset-right); }
+/* Боковые отступы экрана: 16px, но не меньше выреза iPhone в альбомной ориентации */
+.px-page {
+  padding-left: max(env(safe-area-inset-left), 16px);
+  padding-right: max(env(safe-area-inset-right), 16px);
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-fade-up { animation: fade-up 0.25s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+.sheet-in { animation: sheet-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+
+/* Конфетти */
+.confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 60;
+}
+.confetti span {
+  position: absolute;
+  top: -16px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.3, 0.6, 0.6, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes confetti-fall {
+  to {
+    transform: translate(var(--dx), 110vh) rotate(var(--rot));
+  }
+}
+
+/* Отметка задачи */
+@keyframes pop {
+  50% { transform: scale(1.25); }
+}
+.animate-pop { animation: pop 0.25s ease-out; }
+
+/* Переключатель как в iOS */
+.toggle {
+  appearance: none;
+  position: relative;
+  width: 51px;
+  height: 31px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  transition: background 0.2s;
+  cursor: pointer;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.2);
+  transition: transform 0.2s;
+}
+.toggle:checked { background: var(--accent); }
+.toggle:checked::after { transform: translateX(20px); }
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@keyframes shake {
+  20%, 60% { transform: translateX(-10px); }
+  40%, 80% { transform: translateX(10px); }
+}
+.animate-shake { animation: shake 0.35s ease-in-out; }
