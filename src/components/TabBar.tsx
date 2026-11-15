@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Repeat, Sun, Trophy, Users, type LucideIcon } from 'lucide-react'
 import { t } from '../i18n/ru'
@@ -21,6 +21,36 @@ function activeIndex(path: string): number {
 }
 
 /**
+ * Пока страница прокручивается, на <html> висит класс is-scrolling — панель на это время
+ * без живого размытия (см. index.css). Класс меняется только в начале и в конце прокрутки,
+ * поэтому сам обработчик почти ничего не стоит.
+ */
+function useScrollingClass() {
+  useEffect(() => {
+    const root = document.documentElement
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let on = false
+    const onScroll = () => {
+      if (!on) {
+        on = true
+        root.classList.add('is-scrolling')
+      }
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        on = false
+        root.classList.remove('is-scrolling')
+      }, 160)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      clearTimeout(timer)
+      root.classList.remove('is-scrolling')
+    }
+  }, [])
+}
+
+/**
  * Нижняя панель в стиле Liquid Glass.
  * Нажал — переходишь на вкладку. Зажал и ведёшь пальцем — стеклянная линза плавно едет за пальцем,
  * отпустил — открывается вкладка под пальцем.
@@ -29,6 +59,7 @@ export function TabBar() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const active = activeIndex(pathname)
+  useScrollingClass()
 
   const bar = useRef<HTMLDivElement>(null)
   // положение линзы в пикселях, пока палец на панели (null — линза стоит на активной вкладке)

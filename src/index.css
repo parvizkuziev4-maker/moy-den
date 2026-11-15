@@ -252,6 +252,16 @@ select {
     opacity 0.2s ease;
 }
 
+/* Пока страница прокручивается — без живого размытия (его пересчёт на каждом кадре
+   и тормозит прокрутку на iPhone). Панель почти непрозрачная; стекло возвращается сразу после остановки. */
+.is-scrolling .glass-bar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background:
+    linear-gradient(180deg, var(--glass-shine) 0%, transparent 50%),
+    color-mix(in oklab, var(--surface) 94%, transparent);
+}
+
 /* Линза, пока палец держит её: чуть больше и прозрачнее (без второго размытия — оно тяжёлое) */
 .glass-lens-held {
   background: var(--lens-held-bg);
