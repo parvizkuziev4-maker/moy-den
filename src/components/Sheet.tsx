@@ -14,6 +14,13 @@ interface Props {
 export function Sheet({ open, onClose, title, children }: Props) {
   const keyboard = useKeyboardInset(open)
   const panel = useRef<HTMLDivElement>(null)
+  // Клавиатура появилась или изменилась — показываем поле, в котором пишут.
+  useEffect(() => {
+    const el = document.activeElement
+    if (!keyboard || !(el instanceof HTMLElement) || !panel.current?.contains(el)) return
+    const id = requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }))
+    return () => cancelAnimationFrame(id)
+  }, [keyboard])
   const backdrop = useRef<HTMLButtonElement>(null)
   useSwipeToClose(panel, backdrop, open, onClose)
   useEffect(() => {
@@ -35,7 +42,10 @@ export function Sheet({ open, onClose, title, children }: Props) {
     <div
       className="fixed inset-x-0 top-0 z-50 flex items-end justify-center"
       style={{ bottom: keyboard }}
-      role="dialog" aria-modal="true" aria-label={title}>
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
       <button
         ref={backdrop}
         type="button"
@@ -45,8 +55,12 @@ export function Sheet({ open, onClose, title, children }: Props) {
       />
       <div
         ref={panel}
-        className="sheet-in pb-safe relative max-h-[90dvh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-bg shadow-soft"
-        style={{ willChange: 'transform' }}
+        className="sheet-in pb-safe relative w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-bg shadow-soft"
+        // Не выше места над клавиатурой: иначе верх шторки (например, поле названия) уезжает за экран.
+        style={{
+          willChange: 'transform',
+          maxHeight: 'min(90dvh, calc(100% - env(safe-area-inset-top) - 8px))',
+        }}
       >
         <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-line" aria-hidden />
         <header className="flex items-center gap-2 px-5 pt-2 pb-1">
