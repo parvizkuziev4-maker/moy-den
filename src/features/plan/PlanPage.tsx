@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, X } from 'lucide-react'
+import { ClipboardPaste, Search, X } from 'lucide-react'
 import { Page } from '../../components/Page'
 import { Fab } from '../../components/Fab'
 import { Segmented } from '../../components/Segmented'
@@ -12,6 +12,7 @@ import { useAreas, usePeopleMap } from './usePlanData'
 import { DayView, InboxView, MonthView, SearchView, WeekView } from './views'
 import { TaskSheet } from './TaskSheet'
 import { QuickAdd } from './QuickAdd'
+import { PastePlan } from './PastePlan'
 import { t } from '../../i18n/ru'
 
 type View = 'inbox' | 'day' | 'week' | 'month'
@@ -27,6 +28,7 @@ export function PlanPage() {
   const [searching, setSearching] = useState(false)
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [pasting, setPasting] = useState(false)
 
   const areas = useAreas()
   const people = usePeopleMap()
@@ -41,14 +43,24 @@ export function PlanPage() {
       <Page
         title={t.tabs.plan}
         actions={
-          <button
-            type="button"
-            aria-label={searching ? t.common.close : t.plan.search}
-            onClick={() => setSearching((s) => !s)}
-            className="flex size-11 items-center justify-center rounded-full bg-surface text-muted shadow-soft"
-          >
-            {searching ? <X size={22} /> : <Search size={22} />}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-label={t.pastePlan.open}
+              onClick={() => setPasting(true)}
+              className="flex size-11 items-center justify-center rounded-full bg-surface text-muted shadow-soft"
+            >
+              <ClipboardPaste size={22} />
+            </button>
+            <button
+              type="button"
+              aria-label={searching ? t.common.close : t.plan.search}
+              onClick={() => setSearching((s) => !s)}
+              className="flex size-11 items-center justify-center rounded-full bg-surface text-muted shadow-soft"
+            >
+              {searching ? <X size={22} /> : <Search size={22} />}
+            </button>
+          </div>
         }
       >
         {searching ? (
@@ -66,18 +78,40 @@ export function PlanPage() {
             {view === 'inbox' && <InboxView />}
             {view === 'day' && <DayView date={date} setDate={setDate} />}
             {view === 'week' && (
-              <WeekView date={date} setDate={setDate} openDay={openDay} weekStartsOn={weekStartsOn} />
+              <WeekView
+                date={date}
+                setDate={setDate}
+                openDay={openDay}
+                weekStartsOn={weekStartsOn}
+              />
             )}
             {view === 'month' && (
-              <MonthView date={date} setDate={setDate} openDay={openDay} weekStartsOn={weekStartsOn} />
+              <MonthView
+                date={date}
+                setDate={setDate}
+                openDay={openDay}
+                weekStartsOn={weekStartsOn}
+              />
             )}
           </>
         )}
       </Page>
 
       <Fab label={t.plan.add} onClick={() => setAdding(true)} />
-      <QuickAdd open={adding} onClose={() => setAdding(false)} defaultDate={view === 'inbox' ? '' : date} />
+      <QuickAdd
+        open={adding}
+        onClose={() => setAdding(false)}
+        defaultDate={view === 'inbox' ? '' : date}
+      />
       <TaskSheet taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
+      <PastePlan
+        open={pasting}
+        onClose={() => setPasting(false)}
+        onAdded={(d) => {
+          setSearching(false)
+          if (d) openDay(d)
+        }}
+      />
     </PlanContext.Provider>
   )
 }
