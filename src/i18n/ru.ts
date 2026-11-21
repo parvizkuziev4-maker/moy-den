@@ -148,6 +148,12 @@ export const ru = {
     clipboardEmpty: 'В буфере пусто — сначала скопируй план',
     clipboardDenied: 'Нет доступа к буферу. Нажми в поле и выбери «Вставить»',
     failed: 'Не получилось добавить. Ничего не изменилось',
+    isIt: (name: string) => `Это ${name}?`,
+    whoIs: (name: string) => `Кто это — «${name}»?`,
+    inPlan: (name: string) => `В плане написано «${name}»`,
+    yes: 'Да, это он',
+    no: 'Нет, новый человек',
+    newPerson: 'Новый человек',
   },
   task: {
     title: 'Задача',

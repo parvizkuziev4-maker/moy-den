@@ -97,4 +97,95 @@ describe('applyPlan', () => {
     expect(await db.people.count()).toBe(2)
     expect(await db.topics.count()).toBe(2)
   })
+
+  const person = (id: string, name: string) => {
+    const now = new Date().toISOString()
+    return {
+      id,
+      createdAt: now,
+      updatedAt: now,
+      name,
+      group: 'friends' as const,
+      howWeMet: '',
+      phone: '',
+      telegram: '',
+      notes: '',
+      contactEveryDays: 0,
+      tags: [],
+      favorite: false,
+      supportCircle: false,
+    }
+  }
+
+  it('кириллица и латиница: «Safarov Mustafo» сам связывается с «Мустафо Сафаров»', async () => {
+    const db = freshDb()
+    await db.open()
+    await db.people.bulkAdd([person('m', 'Мустафо Сафаров'), person('q', 'Мухаммадали Курбонов')])
+    const plan = parsePlanText(TEXT, '2026-11-21')
+    const preview = await previewPlan(plan, db)
+    expect(preview.questions).toEqual([])
+    expect(preview.newPeople).toEqual([])
+    expect(preview.knownPeople.sort()).toEqual(['Мустафо Сафаров', 'Мухаммадали Курбонов'])
+    await applyPlan(plan, db)
+    expect(await db.people.count()).toBe(2) // никого нового
+    const lunch = (await db.tasks.toArray()).find((t) => t.title === 'Lunch')!
+    expect(lunch.personId).toBe('q')
+    expect((await db.topics.where('personId').equals('m').toArray()).map((t) => t.text)).toEqual([
+      'Who makes which slides?',
+    ])
+  })
+
+  const SIMILAR = `Люди:
+Safarov Mustafa
+? Who makes which slides?
+`
+
+  it('«похоже» — спрашивает; по умолчанию «Да, это он»', async () => {
+    const db = freshDb()
+    await db.open()
+    await db.people.add(person('m', 'Мустафо Сафаров'))
+    const plan = parsePlanText(SIMILAR, '2026-11-21')
+    const preview = await previewPlan(plan, db)
+    expect(preview.questions).toEqual([
+      { key: 'Safarov Mustafa', name: 'Safarov Mustafa', kind: 'similar', candidates: [{ id: 'm', name: 'Мустафо Сафаров' }] },
+    ])
+    await applyPlan(plan, db) // ответ не дали — значит «Да»
+    expect(await db.people.count()).toBe(1)
+    expect(await db.topics.where('personId').equals('m').count()).toBe(1)
+  })
+
+  it('«Нет, новый человек» — создаёт нового с именем как в плане', async () => {
+    const db = freshDb()
+    await db.open()
+    await db.people.add(person('m', 'Мустафо Сафаров'))
+    const plan = parsePlanText(SIMILAR, '2026-11-21')
+    const choices = { 'Safarov Mustafa': 'new' }
+    expect((await previewPlan(plan, db, choices)).newPeople).toEqual(['Safarov Mustafa'])
+    await applyPlan(plan, db, choices)
+    const all = await db.people.toArray()
+    expect(all.map((p) => p.name).sort()).toEqual(['Safarov Mustafa', 'Мустафо Сафаров'])
+    expect(await db.people.get('m')).toMatchObject({ name: 'Мустафо Сафаров' }) // старый не тронут
+  })
+
+  it('подходят двое — выбор из них, можно выбрать второго', async () => {
+    const db = freshDb()
+    await db.open()
+    await db.people.bulkAdd([person('a', 'Мустафо Сафаров'), person('b', 'Мустафо Каримов')])
+    const plan = parsePlanText('Дата: 2026-11-22\n10:00 Встреча @Мустафо\n', '2026-11-21')
+    const preview = await previewPlan(plan, db)
+    expect(preview.questions[0]).toMatchObject({ kind: 'several', name: 'Мустафо' })
+    expect(preview.questions[0]!.candidates.map((c) => c.id).sort()).toEqual(['a', 'b'])
+    await applyPlan(plan, db, { Мустафо: 'b' })
+    expect((await db.tasks.toArray())[0]!.personId).toBe('b')
+    expect(await db.people.count()).toBe(2)
+  })
+
+  it('совсем другое имя — новый человек без вопросов', async () => {
+    const db = freshDb()
+    await db.open()
+    await db.people.add(person('m', 'Мустафо Сафаров'))
+    const plan = parsePlanText('Люди:\nМухаммадали\n? Как дела?\n', '2026-11-21')
+    const preview = await previewPlan(plan, db)
+    expect(preview).toMatchObject({ questions: [], newPeople: ['Мухаммадали'] })
+  })
 })

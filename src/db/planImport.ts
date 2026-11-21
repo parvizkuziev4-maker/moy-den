@@ -1,7 +1,22 @@
 import { db as defaultDb, type MoyDenDB } from './db'
 import type { Person, Task, Topic } from './types'
 import { newId, nowIso } from '../lib/id'
-import { normName, sameName, type ParsedPlan } from '../lib/planText'
+import { normName, type ParsedPlan } from '../lib/planText'
+import { compareNames, findPeople } from '../lib/nameMatch'
+
+/** Вопрос в предпросмотре: «Это Мустафо Сафаров?» или выбор из нескольких */
+export interface PersonQuestion {
+  /** Ключ вопроса — имя как в плане (для выбора ответа) */
+  key: string
+  /** Имя, как написано в плане */
+  name: string
+  /** 'similar' — похож на одного человека; 'several' — подходят несколько */
+  kind: 'similar' | 'several'
+  candidates: { id: string; name: string }[]
+}
+
+/** Ответы на вопросы: ключ → id выбранного человека или 'new' (новый человек) */
+export type PersonChoices = Record<string, string>
 
 export interface PlanPreview {
   newTasks: number
@@ -11,6 +26,8 @@ export interface PlanPreview {
   /** Люди, которых создадим */
   newPeople: string[]
   newTopics: number
+  /** Что спросить у пользователя про людей (ответ по умолчанию — первый кандидат) */
+  questions: PersonQuestion[]
 }
 
 export interface PlanResult extends PlanPreview {
@@ -19,18 +36,13 @@ export interface PlanResult extends PlanPreview {
 
 const taskKey = (date: string, title: string) => `${date}|${normName(title)}`
 
-/** Найти человека: сначала точное имя, потом то же имя в другом порядке или одно слово. */
-function findPerson(people: Person[], name: string): Person | undefined {
-  const n = normName(name)
-  return people.find((p) => normName(p.name) === n) ?? people.find((p) => sameName(p.name, name))
-}
-
 /** Посчитать, что добавится, ничего не записывая. */
 export async function previewPlan(
   plan: ParsedPlan,
   db: MoyDenDB = defaultDb,
+  choices: PersonChoices = {},
 ): Promise<PlanPreview> {
-  return run(plan, db, false)
+  return run(plan, db, false, choices)
 }
 
 /**
@@ -38,11 +50,20 @@ export async function previewPlan(
  * Такая же задача в тот же день (то же название) второй раз не добавится,
  * тот же открытый вопрос человеку — тоже. Всё в одной транзакции.
  */
-export async function applyPlan(plan: ParsedPlan, db: MoyDenDB = defaultDb): Promise<PlanResult> {
-  return db.transaction('rw', db.tasks, db.people, db.topics, () => run(plan, db, true))
+export async function applyPlan(
+  plan: ParsedPlan,
+  db: MoyDenDB = defaultDb,
+  choices: PersonChoices = {},
+): Promise<PlanResult> {
+  return db.transaction('rw', db.tasks, db.people, db.topics, () => run(plan, db, true, choices))
 }
 
-async function run(plan: ParsedPlan, db: MoyDenDB, write: boolean): Promise<PlanResult> {
+async function run(
+  plan: ParsedPlan,
+  db: MoyDenDB,
+  write: boolean,
+  choices: PersonChoices,
+): Promise<PlanResult> {
   const now = nowIso()
   const people = await db.people.toArray()
   const knownPeople: string[] = []
@@ -54,20 +75,42 @@ async function run(plan: ParsedPlan, db: MoyDenDB, write: boolean): Promise<Plan
     ...plan.tasks.flatMap((t) => (t.personName ? [t.personName] : [])),
   ]
   const resolved = new Map<string, string>() // normName → personId
+  const questions: PersonQuestion[] = []
   for (const name of names) {
     if (resolved.has(normName(name))) continue
     // Уже встречали это имя в плане в другой записи («Мухаммадали» и «Qurbonov Мухаммадали»)?
-    const planAlias = [...resolved.keys()].find((k) => sameName(k, name))
+    const planAlias = [...resolved.keys()].find((k) => compareNames(k, name) === 'exact')
     if (planAlias) {
       resolved.set(normName(name), resolved.get(planAlias)!)
       continue
     }
-    const found = findPerson(people, name)
-    if (found) {
-      resolved.set(normName(name), found.id)
-      knownPeople.push(found.name)
+
+    // Ищем среди людей приложения: точное совпадение — связываем сами, «похоже» — спрашиваем
+    const { exact, similar } = findPeople(people, name)
+    const candidates = exact.length ? exact : similar
+    let chosen: Person | undefined
+    if (exact.length === 1) {
+      chosen = exact[0]
+    } else if (candidates.length) {
+      const q: PersonQuestion = {
+        key: name,
+        name,
+        kind: candidates.length > 1 ? 'several' : 'similar',
+        candidates: candidates.map((p) => ({ id: p.id, name: p.name })),
+      }
+      questions.push(q)
+      // по умолчанию — «Да, это он» (первый кандидат); 'new' — новый человек
+      const answer = choices[q.key] ?? q.candidates[0]!.id
+      if (answer !== 'new') chosen = candidates.find((p) => p.id === answer) ?? candidates[0]
+    }
+
+    if (chosen) {
+      resolved.set(normName(name), chosen.id)
+      if (!knownPeople.includes(chosen.name)) knownPeople.push(chosen.name)
       continue
     }
+
+    // Новый человек — с именем, как написано в плане
     const p: Person = {
       id: newId(),
       createdAt: now,
@@ -83,7 +126,6 @@ async function run(plan: ParsedPlan, db: MoyDenDB, write: boolean): Promise<Plan
       favorite: false,
       supportCircle: false,
     }
-    people.push(p)
     resolved.set(normName(name), p.id)
     newPeople.push(p.name)
     if (write) await db.people.add(p)
@@ -156,5 +198,5 @@ async function run(plan: ParsedPlan, db: MoyDenDB, write: boolean): Promise<Plan
     }
   }
 
-  return { newTasks, sameTasks, knownPeople, newPeople, newTopics, firstDate: dates.sort()[0] }
+  return { newTasks, sameTasks, knownPeople, newPeople, newTopics, questions, firstDate: dates.sort()[0] }
 }
